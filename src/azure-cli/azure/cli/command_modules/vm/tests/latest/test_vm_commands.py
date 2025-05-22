@@ -4491,6 +4491,55 @@ class VMSSCreateOptions(ScenarioTest):
             self.check('resiliencyPolicy.resilientVmDeletionPolicy.enabled', True),
         ])
 
+    @ResourceGroupPreparer(name_prefix='test_vmss_with_automatic_zone_rebalancing_policy', location='eastus2')
+    def test_vmss_with_automatic_zone_rebalancing_policy(self, resource_group):
+        self.kwargs.update({
+            'vmss1': self.create_random_name('vmss', 10),
+            'vmss2': self.create_random_name('vmss', 10),
+            'image': 'MicrosoftWindowsServer:WindowsServer:2016-Datacenter:latest',
+            'nsg': self.create_random_name('nsg', 10),
+            'lb1': self.create_random_name('lb', 10),
+            'probe1': self.create_random_name('probe', 10),
+            'rule1': self.create_random_name('rule', 10),
+            'lb2': self.create_random_name('lb', 10),
+            'probe2': self.create_random_name('probe', 10),
+            'rule2': self.create_random_name('rule', 10),
+        })
+        self.cmd('network nsg create -g {rg} -n {nsg}')
+        self.cmd('network lb create -g {rg} -n {lb1}')
+        self.cmd('network lb probe create -g {rg} --lb-name {lb1} -n {probe1} --protocol http --port 80 --path /')
+        self.cmd('network lb rule create -g {rg} --lb-name {lb1} -n {rule1} --probe-name {probe1} --protocol tcp --frontend-port 80 --backend-port 80')
+        self.cmd('vmss create -g {rg} -n {vmss1} --image {image} --vm-sku Standard_D1_v2 --load-balancer {lb1} --health-probe {probe1} --zone-balance true --orchestration-mode Uniform --admin-username vmtest --admin-password Test123456789# --nsg {nsg} --zones 1 2 3 '
+                 '--enable-automatic-zone-balancing True --automatic-zone-balancing-strategy Recreate --automatic-zone-balancing-behavior CreateBeforeDelete --location eastus2')
+        self.cmd('vmss show -g {rg} -n {vmss1}', checks=[
+            self.check('resiliencyPolicy.automaticZoneRebalancingPolicy.enabled', True),
+            self.check('resiliencyPolicy.automaticZoneRebalancingPolicy.rebalanceStrategy', 'Recreate'),
+            self.check('resiliencyPolicy.automaticZoneRebalancingPolicy.rebalanceBehavior', 'CreateBeforeDelete')
+        ])
+
+        self.cmd('vmss update -g {rg} -n {vmss1} --enable-automatic-zone-balancing False')
+        self.cmd('vmss show -g {rg} -n {vmss1}', checks=[
+            self.check('resiliencyPolicy.automaticZoneRebalancingPolicy.enabled', False),
+            self.check('resiliencyPolicy.automaticZoneRebalancingPolicy.rebalanceStrategy', 'Recreate'),
+            self.check('resiliencyPolicy.automaticZoneRebalancingPolicy.rebalanceBehavior', 'CreateBeforeDelete')
+        ])
+        self.cmd('network lb create -g {rg} -n {lb2}')
+        self.cmd('network lb probe create -g {rg} --lb-name {lb2} -n {probe2} --protocol http --port 80 --path /')
+        self.cmd('network lb rule create -g {rg} --lb-name {lb2} -n {rule2} --probe-name {probe2} --protocol tcp --frontend-port 80 --backend-port 80')
+        self.cmd('vmss create -g {rg} -n {vmss2} --image {image} --vm-sku Standard_D1_v2 --load-balancer {lb2} --health-probe {probe2} --zone-balance true --orchestration-mode Uniform --admin-username vmtest --admin-password Test123456789# --nsg {nsg} --zones 1 2 3 --location eastus2')
+
+        self.cmd('vmss update -g {rg} -n {vmss2} --enable-automatic-zone-balancing True --automatic-zone-balancing-strategy Recreate')
+        self.cmd('vmss show -g {rg} -n {vmss2}', checks=[
+            self.check('resiliencyPolicy.automaticZoneRebalancingPolicy.enabled', True),
+            self.check('resiliencyPolicy.automaticZoneRebalancingPolicy.rebalanceStrategy', 'Recreate')
+        ])
+        self.cmd('vmss update -g {rg} -n {vmss2} --automatic-zone-balancing-behavior CreateBeforeDelete')
+        self.cmd('vmss show -g {rg} -n {vmss2}', checks=[
+            self.check('resiliencyPolicy.automaticZoneRebalancingPolicy.enabled', True),
+            self.check('resiliencyPolicy.automaticZoneRebalancingPolicy.rebalanceStrategy', 'Recreate'),
+            self.check('resiliencyPolicy.automaticZoneRebalancingPolicy.rebalanceBehavior', 'CreateBeforeDelete')
+        ])
+
     @ResourceGroupPreparer(name_prefix='cli_test_vmss_with_max_surge')
     def test_vmss_with_max_surge(self, resource_group):
         self.kwargs.update({
@@ -6789,8 +6838,9 @@ class VMDiskEncryptionTest(ScenarioTest):
 
         self.cmd('vm encryption enable -g {rg} -n {vm} --disk-encryption-keyvault {vault} --encryption-identity {encryptionIdentityId}')
         self.cmd('vm encryption show -g {rg} -n {vm}', checks=[self.check('disks[0].statuses[0].code', 'EncryptionState/encrypted')])
-        
-   
+
+
+    @unittest.skip('need feature for this scenario')
     @AllowLargeResponse(size_kb=99999)
     @ResourceGroupPreparer(name_prefix='cli_test_vm_encryption_identity_set_at_encryption_cmdlet', location='westus')
     @KeyVaultPreparer(name_prefix='vault', name_len=10, key='vault',
@@ -7148,7 +7198,7 @@ class VMDiskEncryptionTest(ScenarioTest):
 
     @ResourceGroupPreparer(name_prefix='cli_test_vm_encryption', location='eastus2')
     @KeyVaultPreparer(name_prefix='vault', name_len=10, location='eastus2', key='vault',
-                      additional_params='--enabled-for-disk-encryption')
+                      additional_params='--enabled-for-disk-encryption --enable-rbac-authorization false')
     def test_vm_disk_encryption_with_key(self, resource_group, resource_group_location, key_vault):
         self.kwargs.update({
             'vm': 'vm1',
@@ -7851,8 +7901,8 @@ class VMGalleryImage(ScenarioTest):
             self.check('storageProfile.osDiskImage.source.uri', '{vhd_uri}')
         ])
 
-    @ResourceGroupPreparer(random_name_length=15, location='CentralUSEUAP')
-    @KeyVaultPreparer(name_prefix='vault-', name_len=20, key='vault', location='CentralUSEUAP',
+    @ResourceGroupPreparer(random_name_length=15, location='westus')
+    @KeyVaultPreparer(name_prefix='vault-', name_len=20, key='vault', location='westus',
                       additional_params='--enable-purge-protection true --enable-rbac-authorization false')
     def test_create_image_version_with_region_cvm_encryption(self, resource_group, resource_group_location, key_vault):
         self.kwargs.update({
@@ -7903,7 +7953,7 @@ class VMGalleryImage(ScenarioTest):
         self.cmd('disk create -g {rg} -n {disk1} --image-reference MicrosoftWindowsServer:WindowsServer:2022-datacenter-smalldisk-g2:latest --hyper-v-generation V2  --security-type ConfidentialVM_VMGuestStateOnlyEncryptedWithPlatformKey --disk-encryption-set {des1_id}')
         self.cmd('snapshot create -g {rg} -n {snapshot1} --source {disk1}')
         self.cmd('sig image-version create -g {rg} --gallery-name {gallery} --gallery-image-definition {image} --gallery-image-version {version} --target-regions {location}=1 --target-region-encryption {des1},0,{des1} --target-region-cvm-encryption EncryptedVMGuestStateOnlyWithPmk, --os-snapshot {snapshot1} --replica-count 1', checks=[
-            self.check('publishingProfile.targetRegions[0].name', 'Central US EUAP'),
+            self.check('publishingProfile.targetRegions[0].name', 'West US'),
             self.check('publishingProfile.targetRegions[0].regionalReplicaCount', 1),
             self.check('publishingProfile.targetRegions[0].encryption.osDiskImage.diskEncryptionSetId', '{des1_id}'),
             self.check('publishingProfile.targetRegions[0].encryption.dataDiskImages[0].lun', 0),
@@ -8583,7 +8633,8 @@ class VMGalleryImage(ScenarioTest):
             'captured': 'managedImage1',
             'location': resource_group_location,
             'subnet': 'subnet1',
-            'vnet': 'vnet1'
+            'vnet': 'vnet1',
+            'pubip': 'pubip',
         })
 
         self.cmd('sig create -g {rg} --gallery-name {gallery} --permissions Community --publisher-uri puburi --publisher-email abc@123.com --eula eula --public-name-prefix pubname')
@@ -8591,8 +8642,11 @@ class VMGalleryImage(ScenarioTest):
 
         self.cmd('sig image-definition create -g {rg} --gallery-name {gallery} --gallery-image-definition {image} '
                  '--os-type linux -p publisher1 -f offer1 -s sku1 --hyper-v-generation v1')
+
+        # Create a public IP resource with service tag
+        self.cmd('network public-ip create --name {pubip} -g {rg} --ip-tags FirstPartyUsage=/NonProd')
         self.cmd('vm create -g {rg} -n {vm} --image Canonical:UbuntuServer:18.04-LTS:latest --admin-username gallerytest '
-                 '--generate-ssh-keys --subnet {subnet} --vnet-name {vnet} --nsg-rule None')
+                 '--generate-ssh-keys --public-ip-address {pubip} --subnet {subnet} --vnet-name {vnet} --nsg-rule None')
         self.cmd('vm deallocate -g {rg} -n {vm}')
         self.cmd('vm generalize -g {rg} -n {vm}')
 
@@ -8655,6 +8709,9 @@ class VMGalleryImage(ScenarioTest):
             'subnet': 'subnet1',
             'vnet': 'vnet1',
             'nsg': 'nsg1',
+            'pubip1': 'pubip1',
+            'pubip2': 'pubip2',
+            'pubip3': 'pubip3',
         })
 
         self.cmd('sig create -g {rg} --gallery-name {gallery} --permissions Community --publisher-uri puburi --publisher-email abc@123.com --eula eula --public-name-prefix pubname')
@@ -8662,8 +8719,11 @@ class VMGalleryImage(ScenarioTest):
 
         self.cmd('sig image-definition create -g {rg} --gallery-name {gallery} --gallery-image-definition {image} '
                  '--os-type linux -p publisher1 -f offer1 -s sku1 --hyper-v-generation v1')
+
+        # Create a public IP resource with service tag
+        self.cmd('network public-ip create --name {pubip1} -g {rg} --ip-tags FirstPartyUsage=/NonProd')
         self.cmd('vm create -g {rg} -n {vm} --image Canonical:UbuntuServer:18.04-LTS:latest --admin-username gallerytest '
-                 '--generate-ssh-keys --subnet {subnet} --vnet-name {vnet} --nsg-rule None')
+                 '--generate-ssh-keys --subnet {subnet} --vnet-name {vnet} --public-ip-address {pubip1} --nsg-rule None')
 
         # Disable default outbound access
         self.cmd('network vnet subnet update -g {rg} --vnet-name {vnet} -n {subnet} --default-outbound-access false')
@@ -8682,8 +8742,11 @@ class VMGalleryImage(ScenarioTest):
             ])
 
         self.kwargs['community_gallery_image_version'] = self.cmd('sig image-version show-community --gallery-image-definition {image} --public-gallery-name {public_name} --location eastus2 --gallery-image-version {version}').get_output_in_json()['uniqueId']
+
+        # Create a public IP resource with service tag
+        self.cmd('network public-ip create --name {pubip2} -g {rg} --ip-tags FirstPartyUsage=/NonProd')
         self.cmd('vm create -g {rg} -n {vm_with_community_gallery} --image {community_gallery_image_version} '
-                 '--admin-username gallerytest --generate-ssh-keys --nsg-rule None --accept-term --subnet {subnet} --vnet-name {vnet}')
+                 '--admin-username gallerytest --generate-ssh-keys --public-ip-address {pubip2} --nsg-rule None --accept-term --subnet {subnet} --vnet-name {vnet}')
 
         self.cmd('vm show -g {rg} -n {vm_with_community_gallery}', checks=[
             self.check('storageProfile.imageReference.exactVersion','{version}'),
@@ -8691,8 +8754,11 @@ class VMGalleryImage(ScenarioTest):
         ])
 
         self.cmd('network nsg create -g {rg} -n {nsg}')
+
+        # Create a public IP resource with service tag
+        self.cmd('network public-ip create --name {pubip3} -g {rg} --ip-tags FirstPartyUsage=/NonProd')
         self.cmd('vmss create -g {rg} -n {vmss_with_community_gallery_version} --admin-username gallerytest --generate-ssh-keys '
-                 '--image {community_gallery_image_version} --accept-term --orchestration-mode Flexible --nsg {nsg}')
+                 '--image {community_gallery_image_version} --accept-term --orchestration-mode Flexible --public-ip-address {pubip3} --nsg {nsg}')
 
         self.cmd('vmss show -g {rg} -n {vmss_with_community_gallery_version}', checks=[
             self.check('virtualMachineProfile.storageProfile.imageReference.communityGalleryImageId', '{community_gallery_image_version}')
@@ -9517,7 +9583,8 @@ class VMSSTerminateNotificationScenarioTest(ScenarioTest):
     def test_vm_scheduled_events_policy(self, resource_group):
         self.kwargs.update({
             'vm1': self.create_random_name('vm', 10),
-            'vm2': self.create_random_name('vm', 10)
+            'vm2': self.create_random_name('vm', 10),
+            'vm3': self.create_random_name('vm', 10),
         })
         self.cmd('vm create -g {rg} -n {vm1} --image Canonical:UbuntuServer:18.04-LTS:latest --additional-events True --enable-reboot True --enable-redeploy True --nsg-rule NONE')
         self.cmd('vm show -g {rg} -n {vm1}', checks=[
@@ -9548,6 +9615,18 @@ class VMSSTerminateNotificationScenarioTest(ScenarioTest):
             self.check('scheduledEventsPolicy.userInitiatedRedeploy.automaticallyApprove', True),
             self.check('scheduledEventsPolicy.userInitiatedReboot.automaticallyApprove', True)
         ])
+        self.cmd('vm create -g {rg} -n {vm3} --image Canonical:UbuntuServer:18.04-LTS:latest --additional-events True --nsg-rule NONE')
+        self.cmd('vm show -g {rg} -n {vm3}', checks=[
+            self.check('scheduledEventsPolicy.scheduledEventsAdditionalPublishingTargets.eventGridAndResourceGraph.enable', True),
+            self.check('scheduledEventsPolicy.userInitiatedRedeploy', None),
+            self.check('scheduledEventsPolicy.userInitiatedReboot', None)
+        ])
+        self.cmd('vm update -g {rg} -n {vm3} --enable-reboot True', checks=[
+            self.check('scheduledEventsPolicy.scheduledEventsAdditionalPublishingTargets.eventGridAndResourceGraph.enable',True),
+            self.check('scheduledEventsPolicy.userInitiatedRedeploy', None),
+            self.check('scheduledEventsPolicy.userInitiatedReboot.automaticallyApprove', True)
+        ])
+
 
 class VMPriorityEvictionBillingTest(ScenarioTest):
 
@@ -10343,11 +10422,19 @@ class DiskEncryptionSetTest(ScenarioTest):
             'image': self.create_random_name('image-', 15),
             'vmss1': self.create_random_name('vmss-', 15),
             'subnet': 'subnet1',
-            'vnet': 'vnet1'
+            'vnet': 'vnet1',
+            'pubip1': 'pubip1',
+            'pubip2': 'pubip2',
+            'pubip3': 'pubip3',
+            'pubip4': 'pubip4',
+            'nsg': 'nsg',
         })
         self.cmd('disk create -n {vm_disk} -g {rg} --hyper-v-generation v2 --size-gb 10')
+
+        # Create a public IP resource with service tag
+        self.cmd('network public-ip create --name {pubip1} -g {rg} --ip-tags FirstPartyUsage=/NonProd')
         self.cmd('vm create --disk-controller-type SCSI -n {vm} -g {rg} --attach-os-disk {vm_disk} --os-type linux '
-                 '--subnet {subnet} --vnet-name {vnet} --nsg-rule NONE')
+                 '--subnet {subnet} --vnet-name {vnet} --public-ip-address {pubip1} --nsg-rule NONE')
 
         # Disable default outbound access
         self.cmd('network vnet subnet update -g {rg} --vnet-name {vnet} -n {subnet} --default-outbound-access false')
@@ -10356,23 +10443,31 @@ class DiskEncryptionSetTest(ScenarioTest):
             self.check('storageProfile.diskControllerType', 'SCSI')
         ])
 
+        # Create a public IP resource with service tag
+        self.cmd('network public-ip create --name {pubip2} -g {rg} --ip-tags FirstPartyUsage=/NonProd')
         self.cmd('vm create -g {rg} -n {vm1} --image CANONICAL:UBUNTUSERVER:18_04-LTS-GEN2:latest --storage-sku standard_lrs '
-                 '--size Standard_E2bs_v5 --subnet {subnet} --vnet-name {vnet} --nsg-rule NONE')
+                 '--size Standard_E2bs_v5 --subnet {subnet} --vnet-name {vnet} --public-ip-address {pubip2} --nsg-rule NONE')
         self.cmd('vm update --disk-controller-type SCSI -n {vm1} -g {rg}')
         self.cmd('vm show -n {vm1} -g {rg}', checks=[
             self.check('storageProfile.diskControllerType', 'SCSI')
         ])
 
+        # Create a public IP resource with service tag
+        self.cmd('network public-ip create --name {pubip3} -g {rg} --ip-tags FirstPartyUsage=/NonProd')
         self.cmd('vm create -g {rg} -n {vm2} --image CANONICAL:UBUNTUSERVER:18_04-LTS-GEN2:latest --storage-sku standard_lrs '
-                 '--size Standard_E2bs_v5 --admin-username clitest1 --admin-password Password001! --generate-ssh-key --nsg-rule None --security-type Standard --subnet {subnet} --vnet-name {vnet}')
+                 '--size Standard_E2bs_v5 --admin-username clitest1 --admin-password Password001! --generate-ssh-key --public-ip-address {pubip3} --nsg-rule None --security-type Standard --subnet {subnet} --vnet-name {vnet}')
         self.cmd('vm deallocate -g {rg} -n {vm2}')
         self.cmd('vm generalize -g {rg} -n {vm2}')
         self.cmd('image create -g {rg} -n {image} --source {vm2} --hyper-v-generation v2')
-        self.cmd('vmss create -g {rg} -n {vmss} --image {image} --disk-controller-type scsi --admin-username sdk-test-admin --admin-password testPassword001!  --vm-sku Standard_E2bs_v5', checks=[
+
+        self.cmd('network nsg create -g {rg} -n {nsg}')
+        self.cmd('vmss create -g {rg} -n {vmss} --image {image} --disk-controller-type scsi --admin-username sdk-test-admin --admin-password testPassword001! --vm-sku Standard_E2bs_v5 --nsg {nsg}', checks=[
             self.check('vmss.virtualMachineProfile.storageProfile.diskControllerType', 'SCSI')
         ])
 
-        self.cmd('vmss create -g {rg} -n {vmss1} --image {image} --admin-username sdk-test-admin --admin-password testPassword001! --vm-sku Standard_E2bs_v5 --orchestration-mode Flexible')
+        # Create a public IP resource with service tag
+        self.cmd('network public-ip create --name {pubip4} -g {rg} --ip-tags FirstPartyUsage=/NonProd')
+        self.cmd('vmss create -g {rg} -n {vmss1} --image {image} --admin-username sdk-test-admin --admin-password testPassword001! --vm-sku Standard_E2bs_v5 --orchestration-mode Flexible --public-ip-address {pubip4} --nsg {nsg}')
         self.cmd('vmss update -g {rg} -n {vmss1} --disk-controller-type scsi', checks=[
             self.check('virtualMachineProfile.storageProfile.diskControllerType', 'SCSI')
         ])
@@ -10719,6 +10814,43 @@ class SkuProfileTest(ScenarioTest):
             self.check('skuProfile.vmSizes[0].name', 'Standard_DS1_v2'),
             self.check('skuProfile.vmSizes[1].name', 'Standard_D2s_v4')
         ])
+    
+    @ResourceGroupPreparer(name_prefix='cli_test_vmss_create_sku_profile_prioritized', location='eastus2')
+    def test_vmss_create_sku_profile_prioritized(self, resource_group):
+        self.kwargs.update({
+            'vmss': self.create_random_name('vmss', 10),
+        })
+        self.cmd('vmss create -n {vmss} -g {rg} --image ubuntu2204 --vm-sku Mix ' + 
+                ' --skuprofile-vmsizes Standard_DS1_v2 Standard_D2s_v4' +
+                ' --skuprofile-rank "" 1' +
+                ' --skuprofile-allocation-strategy Prioritized', checks=[
+            self.check('vmss.orchestrationMode', 'Flexible'),
+            self.check('vmss.skuProfile.allocationStrategy', 'Prioritized'),
+            self.check('vmss.skuProfile.vmSizes[0].name', 'Standard_DS1_v2'),
+            self.check('vmss.skuProfile.vmSizes[0].rank', 'None'),
+            self.check('vmss.skuProfile.vmSizes[1].name', 'Standard_D2s_v4'),
+            self.check('vmss.skuProfile.vmSizes[1].rank', '1')
+        ])
+
+        self.cmd('vmss update -n {vmss} -g {rg} ' + 
+                ' --skuprofile-vmsizes Standard_DS1_v2 Standard_D2s_v4 --skuprofile-rank 1 0', checks=[
+            self.check('skuProfile.allocationStrategy', 'Prioritized'),
+            self.check('skuProfile.vmSizes[0].name', 'Standard_DS1_v2'),
+            self.check('skuProfile.vmSizes[0].rank', '1'),
+            self.check('skuProfile.vmSizes[1].name', 'Standard_D2s_v4'),
+            self.check('skuProfile.vmSizes[1].rank', '0')
+        ])
+    
+    @ResourceGroupPreparer(name_prefix='cli_test_vmss_create_sku_profile_prioritized_validation', location='eastus2')
+    def test_vmss_create_sku_profile_prioritized_validation(self, resource_group):
+        self.kwargs.update({
+            'vmss': self.create_random_name('vmss', 10),
+        })
+        with self.assertRaisesRegex(CLIError, "The SKU profile rank list does not specify a rank for every VM size."):
+            self.cmd('vmss create -n {vmss} -g {rg} --image ubuntu2204 --vm-sku Mix ' + 
+                ' --skuprofile-vmsizes Standard_DS1_v2 Standard_D2s_v4' +
+                ' --skuprofile-rank 1' +
+                ' --skuprofile-allocation-strategy Prioritized')
 
 
 class VMCreateNSGRule(ScenarioTest):
@@ -13005,7 +13137,7 @@ class RestorePointScenarioTest(ScenarioTest):
             self.check('sourceRestorePoint.id', '{point_id}')
         ])
 
-    @ResourceGroupPreparer(name_prefix='cli_test_restore_point_encryption_local', location='EastUS2EUAP')
+    @ResourceGroupPreparer(name_prefix='cli_test_restore_point_encryption_local')
     def test_restore_point_encryption_local(self, resource_group):
         self.kwargs.update({
             'vault1': self.create_random_name('vault', 15),

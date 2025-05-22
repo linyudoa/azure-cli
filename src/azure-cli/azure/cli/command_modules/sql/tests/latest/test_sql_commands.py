@@ -1099,8 +1099,8 @@ class SqlServerServerlessDbMgmtScenarioTest(ScenarioTest):
                 JMESPathCheck('minCapacity', min_capacity)])
 
 class SqlServerFreeDbMgmtScenarioTest(ScenarioTest):
-    @ResourceGroupPreparer(location='eastus2euap')
-    @SqlServerPreparer(location='eastus2euap')
+    @ResourceGroupPreparer(location='eastus')
+    @SqlServerPreparer(location='eastus')
     @AllowLargeResponse()
     def test_sql_db_free_params(self, resource_group, resource_group_location, server):
         database_name = "freeDb1"
@@ -1994,7 +1994,7 @@ class SqlServerDbSecurityScenarioTest(ScenarioTest):
                                                   JMESPathCheck('resourceGroup', resource_group),
                                                   JMESPathCheck('name', log_analytics_workspace_name),
                                                   JMESPathCheck('provisioningState',
-                                                                'Creating')]).get_output_in_json()['id']
+                                                                'Succeeded')]).get_output_in_json()['id']
 
         # update audit policy - enable log analytics target
         self.cmd('sql db audit-policy update -g {} -s {} -n {} --state {}'
@@ -2200,7 +2200,7 @@ class SqlServerSecurityScenarioTest(ScenarioTest):
                                                   JMESPathCheck('resourceGroup', resource_group),
                                                   JMESPathCheck('name', log_analytics_workspace_name),
                                                   JMESPathCheck('provisioningState',
-                                                                'Creating')]).get_output_in_json()['id']
+                                                                'Succeeded')]).get_output_in_json()['id']
 
         # update audit policy - enable log analytics target
         self.cmd('sql server audit-policy update -g {} -n {}'
@@ -2609,7 +2609,7 @@ class SqlServerMSSupportScenarioTest(ScenarioTest):
                                                   JMESPathCheck('resourceGroup', resource_group),
                                                   JMESPathCheck('name', log_analytics_workspace_name),
                                                   JMESPathCheck('provisioningState',
-                                                                'Creating')]).get_output_in_json()['id']
+                                                                'Succeeded')]).get_output_in_json()['id']
 
         # update MS support audit policy - enable log analytics target
         self.cmd('sql server ms-support audit-policy update -g {} -n {} --state {}'
@@ -4440,8 +4440,8 @@ class SqlSubscriptionUsagesScenarioTest(ScenarioTest):
 
 
 class SqlZoneResilienceScenarioTest(ScenarioTest):
-    @ResourceGroupPreparer(location='eastus2euap')
-    @SqlServerPreparer(location='eastus2euap')
+    @ResourceGroupPreparer(location='eastus')
+    @SqlServerPreparer(location='eastus')
     @AllowLargeResponse()
     def test_sql_zone_resilient_database(self, resource_group, resource_group_location, server):
         database_name = "createUnzonedUpdateToZonedDb"
